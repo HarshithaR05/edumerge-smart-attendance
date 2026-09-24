@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Attendance Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans p-6">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <header class="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-200">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-800">Smart Attendance & Audit Portal</h1>
+        <p class="text-sm text-slate-500">Edumerge Assessment Prototype</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <select id="roleSelector" class="border rounded px-3 py-1.5 text-sm bg-white">
+          <option value="admin">Admin (Approval & Defaulters)</option>
+          <option value="faculty1">Faculty (Record & Manage)</option>
+          <option value="student1">Student (Dispute Desk)</option>
+        </select>
+        <button onclick="handleLogin()" class="bg-indigo-600 text-white px-4 py-1.5 rounded text-sm hover:bg-indigo-700">Switch Role</button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-white p-5 rounded-xl border border-slate-200 col-span-1">
+        <h2 class="font-bold text-lg mb-3 flex items-center gap-2">
+          <span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span> Defaulter Alerts (&lt; 75%)
+        </h2>
+        <div id="defaulterContainer" class="text-sm text-slate-500">Click below to fetch dynamic records.</div>
+        <button onclick="fetchDefaulters()" class="mt-4 w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium py-1.5 rounded text-xs">Run Defaulter Engine</button>
+      </div>
+
+      <div class="bg-white p-5 rounded-xl border border-slate-200 col-span-2 space-y-6">
+        <div>
+          <h2 class="font-bold text-lg mb-2">Faculty Attendance Entry</h2>
+          <div class="grid grid-cols-3 gap-3 text-sm">
+            <input type="date" id="attDate" class="border p-2 rounded" value="2026-09-25">
+            <input type="number" id="attSlot" placeholder="Slot (1-8)" class="border p-2 rounded" value="1">
+            <button onclick="submitAttendance()" class="bg-emerald-600 text-white font-medium rounded hover:bg-emerald-700">Submit Session</button>
+          </div>
+        </div>
+
+        <hr class="border-slate-200">
+
+        <div>
+          <h2 class="font-bold text-lg mb-2">Student Dispute Desk</h2>
+          <div class="flex gap-2">
+            <input type="number" id="reqRecordId" placeholder="Record ID (e.g. 1)" class="border p-2 text-sm rounded w-32">
+            <input type="text" id="reqReason" placeholder="Reason (e.g. Medical leave verified)" class="border p-2 text-sm rounded flex-1">
+            <button onclick="raiseTicket()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-semibold">Raise Dispute</button>
+          </div>
+        </div>
+
+        <hr class="border-slate-200">
+
+        <div>
+          <h2 class="font-bold text-lg mb-2">Governance & Approval Desk</h2>
+          <div class="flex gap-2">
+            <input type="number" id="ticketId" placeholder="Ticket ID (e.g. 1)" class="border p-2 text-sm rounded w-28">
+            <input type="text" id="reviewRemarks" placeholder="Review remarks" class="border p-2 text-sm rounded flex-1">
+            <button onclick="actionTicket('APPROVED')" class="bg-teal-600 text-white px-3 py-1.5 rounded text-xs font-semibold">Approve</button>
+            <button onclick="actionTicket('REJECTED')" class="bg-rose-600 text-white px-3 py-1.5 rounded text-xs font-semibold">Reject</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let token = "";
+    const API = "http://localhost:8000/api";
+
+    async function handleLogin() {
+      const username = document.getElementById("roleSelector").value;
+      const res = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username })
+      });
+      const data = await res.json();
+      token = data.access_token;
+      alert(`Authenticated as: ${data.role}`);
+    }
+
+    async function submitAttendance() {
+      if(!token) await handleLogin();
+      const res = await fetch(`${API}/attendance/session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          subject_id: 1,
+          section_id: 1,
+          session_date: document.getElementById("attDate").value,
+          slot: parseInt(document.getElementById("attSlot").value),
+          records: [{ student_id: 1, status: "ABSENT" }]
+        })
+      });
+      const data = await res.json();
+      alert(data.message || data.detail);
+    }
+
+    async function raiseTicket() {
+      if(!token) await handleLogin();
+      const record_id = parseInt(document.getElementById("reqRecordId").value);
+      const reason = document.getElementById("reqReason").value;
+      const res = await fetch(`${API}/tickets/raise`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ record_id, requested_status: "PRESENT", reason })
+      });
+      const data = await res.json();
+      alert(data.message || data.detail);
+    }
+
+    async function fetchDefaulters() {
+      if(!token) await handleLogin();
+      const res = await fetch(`${API}/reports/defaulters?threshold=75`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const c = document.getElementById("defaulterContainer");
+      if(data.length === 0) {
+        c.innerHTML = "<p class='text-emerald-600 font-medium'>No students below 75% threshold.</p>";
+      } else {
+        c.innerHTML = data.map(d => `<div class='p-2 bg-rose-50 border border-rose-200 rounded mb-2'><b>${d.name}</b> (${d.usn})<br/>Score: <b class='text-rose-700'>${d.percentage}%</b> (${d.attended_classes}/${d.total_classes} classes)</div>`).join("");
+      }
+    }
+
+    async function actionTicket(decision) {
+      if(!token) await handleLogin();
+      const id = document.getElementById("ticketId").value;
+      const remarks = document.getElementById("reviewRemarks").value;
+      const res = await fetch(`${API}/tickets/${id}/action`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ action: decision, remarks })
+      });
+      const data = await res.json();
+      alert(data.message || data.detail);
+    }
+  </script>
+</body>
+</html>
